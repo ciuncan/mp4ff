@@ -42,6 +42,7 @@ type SPS struct {
 	SpsTemporalMvpEnabledFlag            bool
 	StrongIntraSmoothingEnabledFlag      bool
 	VUIParametersPresentFlag             bool
+	VUIParameters                        *VUIParameters
 }
 
 // ProfileTierLevel according to ISO/IEC 23008-2 Section 7.3.3
@@ -165,6 +166,9 @@ func ParseSPSNALUnit(data []byte) (*SPS, error) {
 	sps.SpsTemporalMvpEnabledFlag = r.ReadFlag()
 	sps.StrongIntraSmoothingEnabledFlag = r.ReadFlag()
 	sps.VUIParametersPresentFlag = r.ReadFlag()
+	if sps.VUIParametersPresentFlag {
+		sps.VUIParameters = readVUIParameters(r)
+	}
 
 	return sps, r.AccError()
 }
@@ -182,4 +186,92 @@ func (s *SPS) ImageSize() (width, height uint32) {
 	width = encWidth - (s.ConformanceWindow.LeftOffset+s.ConformanceWindow.RightOffset)*subWidthC
 	height = encHeight - (s.ConformanceWindow.TopOffset+s.ConformanceWindow.BottomOffset)*subHeightC
 	return width, height
+}
+
+// VUI - HEVC VUI parameters
+// ISO/IEC 23008-2 Sec. E.2.1
+type VUIParameters struct {
+	AspectRatioInfoPresentFlag     bool
+	AspectRatioIDC                 byte
+	SARWidth                       uint16
+	SARHeight                      uint16
+	OverscanInfoPresentFlag        bool
+	OverscanAppropriateFlag        bool
+	VideoSignalTypePresentFlag     bool
+	VideoFormat                    byte
+	VideoFullRangeFlag             bool
+	ColourDescriptionPresentFlag   bool
+	ColourPrimaries                byte
+	TransferCharacteristics        byte
+	MatrixCoeffs                   byte
+	ChromaLocInfoPresentFlag       bool
+	ChromaSampleLocTypeTopField    uint32
+	ChromaSampleLocTypeBottomField uint32
+	NeutralChromaIndicationFlag    bool
+	FieldSeqFlag                   bool
+	FrameFieldInfoPresentFlag      bool
+	DefaultDisplayWindowFLag       bool
+	DefDispWinLeftOffset           uint32
+	DefDispWinRightOffset          uint32
+	DefDispWinTopOffset            uint32
+	DefDispWinBottomOffset         uint32
+	VUITimingInfoPresentFlag       bool
+	VUINumUnitsInTick              uint32
+	VUITimeScale                   uint32
+	VUIPocProportionalToTimingFlag bool
+	VUINumTicksPocDiffOneMinus1    uint32
+	//VUIHrdParametersPresentFlag    bool
+	//HrdParameters HrdParameters
+}
+
+const EXTENDED_SAR byte = 255
+
+func readVUIParameters(r *bits.AccErrEBSPReader) *VUIParameters {
+	p := VUIParameters{}
+	p.AspectRatioInfoPresentFlag = r.ReadFlag()
+	if p.AspectRatioInfoPresentFlag {
+		p.AspectRatioIDC = byte(r.Read(8))
+		if p.AspectRatioIDC == EXTENDED_SAR {
+			p.SARWidth = uint16(r.Read(16))
+			p.SARHeight = uint16(r.Read(16))
+		}
+	}
+	p.OverscanInfoPresentFlag = r.ReadFlag()
+	if p.OverscanInfoPresentFlag {
+		p.OverscanAppropriateFlag = r.ReadFlag()
+	}
+	p.VideoSignalTypePresentFlag = r.ReadFlag()
+	if p.VideoSignalTypePresentFlag {
+		p.VideoFormat = byte(r.Read(3))
+		p.VideoFullRangeFlag = r.ReadFlag()
+		p.ColourDescriptionPresentFlag = r.ReadFlag()
+		if p.ColourDescriptionPresentFlag {
+			p.ColourPrimaries = byte(r.Read(8))
+			p.TransferCharacteristics = byte(r.Read(8))
+			p.MatrixCoeffs = byte(r.Read(8))
+		}
+	}
+	p.ChromaLocInfoPresentFlag = r.ReadFlag()
+	if p.ChromaLocInfoPresentFlag {
+		p.ChromaSampleLocTypeTopField = uint32(r.ReadExpGolomb())
+		p.ChromaSampleLocTypeBottomField = uint32(r.ReadExpGolomb())
+	}
+	p.NeutralChromaIndicationFlag = r.ReadFlag()
+	p.FieldSeqFlag = r.ReadFlag()
+	p.FrameFieldInfoPresentFlag = r.ReadFlag()
+	p.DefaultDisplayWindowFLag = r.ReadFlag()
+	if p.DefaultDisplayWindowFLag {
+		p.DefDispWinLeftOffset = uint32(r.ReadExpGolomb())
+		p.DefDispWinRightOffset = uint32(r.ReadExpGolomb())
+		p.DefDispWinTopOffset = uint32(r.ReadExpGolomb())
+		p.DefDispWinBottomOffset = uint32(r.ReadExpGolomb())
+	}
+	p.VUITimingInfoPresentFlag = r.ReadFlag()
+	p.VUINumUnitsInTick = uint32(r.Read(32))
+	p.VUITimeScale = uint32(r.Read(32))
+	p.VUIPocProportionalToTimingFlag = r.ReadFlag()
+	if p.VUIPocProportionalToTimingFlag {
+		p.VUINumTicksPocDiffOneMinus1 = uint32(r.ReadExpGolomb())
+	}
+	return &p
 }
